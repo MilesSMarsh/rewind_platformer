@@ -4,14 +4,17 @@ use bevy_rapier2d::prelude::*;
 fn main(){
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .add_plugins(RapierDebugRenderPlugin::default())
         .add_systems(Startup, (setup_camera, setup_ground, spawn_player))
-        .add_systems(Update, character_movement)
+        .add_systems(Update, (character_horizontal_movement, character_jump))
         .run()
 }
 
 #[derive(Component)]
 pub struct Player {
     pub speed: f32,
+    // pub past_positions: Array,
 }
 
 fn setup_camera(
@@ -27,21 +30,25 @@ fn setup_ground(
     let material = materials.add(Color::rgb(0.5, 0.5, 1.0).into());
 
     commands
-        .spawn(RigidBody::Fixed)
-        .insert(Collider::cuboid(20., 20.))
-        .insert(TransformBundle::from(Transform::from_xyz(0., -50., 0.)))
-        .insert(material);
+        .spawn(SpriteBundle{
+            sprite: Sprite { color: Color::rgb(0.1, 0.4, 1.), custom_size: Some(Vec2::new(5000., 5000.)), ..default()},
+            transform: Transform::from_xyz(0., 0., -10.),
+            ..default()
+        });
 
-    // Rectangle
-    // commands.spawn(SpriteBundle {
-    //     sprite: Sprite {
-    //         color: Color::rgb(0.25, 0.25, 0.75),
-    //         custom_size: Some(Vec2::new(300.0, 100.0)),
-    //         ..default()
-    //     },
-    //     transform: Transform::from_translation(Vec3::new(-50., -50., 0.)),
-    //     ..default()
-    // });
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0., 0., 0.),
+                custom_size: Some(Vec2::new(2000.0, 250.0)),
+                ..default()
+            },
+            ..default()
+        })
+        .insert(RigidBody::Fixed)
+        .insert(Collider::cuboid(1000., 125.))
+        .insert(TransformBundle::from(Transform::from_xyz(0., -400., 0.)))
+        .insert(material);
 
 }
 
@@ -52,39 +59,79 @@ fn spawn_player(
     let texture:Handle<Image>  = asset_server.load("box.png");
     
     commands
-        .spawn(RigidBody::KinematicVelocityBased)
-        .insert(Collider::cuboid(25., 25.))
+        .spawn(RigidBody::Dynamic)
+        .insert(Collider::cuboid(32., 32.))
         .insert(KinematicCharacterController{
             ..default()
         })
-        .insert(Player{speed: 100.})
+        .insert(Velocity{linvel: Vec2::new(0., 0.), angvel:0.})
+        .insert(GravityScale(10.))
+        .insert(Player{speed: 300.})
         .insert(SpriteBundle {
-            global_transform: Transform::from_xyz(0., 0., 0.).into(),
+            global_transform: Transform::from_xyz(0., 100., 0.).into(),
             texture,
             ..Default::default()
         });
 }
 
-
-fn character_movement(
-    mut characters: Query<(&mut Transform, &Player)>,
+fn character_horizontal_movement(
+    mut characters: Query<(&mut KinematicCharacterController, &Player)>,
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
 ) {
-    for( mut transform, player) in &mut characters{
-        let movement_amount = player.speed * time.delta_seconds();
-        if input.pressed(KeyCode::W) {
-            transform.translation.y += movement_amount;
-        }
-        if input.pressed(KeyCode::S) {
-            transform.translation.y -= movement_amount;
-        }
-        if input.pressed(KeyCode::A) {
-            transform.translation.x -= movement_amount;
-        }
+    for(mut controller, player) in characters.iter_mut(){
         if input.pressed(KeyCode::D) {
-            transform.translation.x += movement_amount;
+            let right_speed = player.speed*time.delta_seconds();
+            controller.translation = match controller.translation{
+                Some(mut v) => {
+                    v.x = right_speed;
+                    Some(v)
+                }
+                None =>{
+                    Some(Vec2::new(right_speed, -1.0))
+                }
+            }
+        } else if input.pressed(KeyCode::A) {
+            let left_speed = -player.speed*time.delta_seconds();
+            controller.translation = match controller.translation{
+                Some(mut v) => {
+                    v.x = left_speed;
+                    Some(v)
+                }
+                None =>{
+                    Some(Vec2::new(left_speed, -1.0))
+                }
+            }
+        } else {
+            controller.translation = match controller.translation {
+                Some(mut v) => {
+                    v.x = 0.;
+                    Some(v)
+                }
+                None => Some(Vec2::new(0., -1.)),
+            };
         }
     }
 }
+
+
+fn character_jump(
+    mut characters: Query<(&Player, &mut KinematicCharacterControllerOutput, &mut Velocity)>,
+    input: Res<Input<KeyCode>>,
+    time: Res<Time>,
+) {
+    for(player, output, mut velocity) in characters.iter_mut(){
+        let movement_amount = player.speed * time.delta_seconds();
+        if output.grounded && input.pressed(KeyCode::W) {
+            velocity.linvel = Vec2::new(0.,movement_amount * 120.);
+        }
+    }
+}
+
+// fn store_pos(
+//     time: Res<Time>,
+//     player: Query<&Player>
+// ) {
+
+// }
 
