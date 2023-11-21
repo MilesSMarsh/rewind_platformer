@@ -7,7 +7,7 @@ fn main(){
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_systems(Startup, (setup_camera, setup_ground, spawn_player))
+        .add_systems(Startup, (setup_camera, setup_scene, spawn_player))
         .add_systems(Update, (character_horizontal_movement, character_jump, store_pos))
         .add_systems(Update, rewind.before(store_pos))
         .run()
@@ -32,12 +32,15 @@ fn setup_camera(
     commands.spawn(Camera2dBundle::default());
 }
 
-fn setup_ground(
+fn setup_scene(
         mut commands: Commands,
         mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let material = materials.add(Color::rgb(0.5, 0.5, 1.0).into());
+    let material1 = materials.add(Color::rgb(0.5, 0.5, 1.0).into());
+    let material2 = materials.add(Color::rgb(0.5, 0.5, 1.0).into());
+    let material3 = materials.add(Color::rgb(0.5, 0.5, 1.0).into());
 
+    //blue background
     commands
         .spawn(SpriteBundle{
             sprite: Sprite { color: Color::rgb(0.1, 0.4, 1.), custom_size: Some(Vec2::new(5000., 5000.)), ..default()},
@@ -45,6 +48,8 @@ fn setup_ground(
             ..default()
         });
 
+
+    //floor
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
@@ -57,7 +62,37 @@ fn setup_ground(
         .insert(RigidBody::Fixed)
         .insert(Collider::cuboid(1000., 125.))
         .insert(TransformBundle::from(Transform::from_xyz(0., -400., 0.)))
-        .insert(material);
+        .insert(material1);
+
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0., 0., 0.),
+                custom_size: Some(Vec2::new(500.0, 50.0)),
+                ..default()
+            },
+            ..default()
+        })
+        .insert(RigidBody::Fixed)
+        .insert(Collider::cuboid(250., 25.))
+        .insert(TransformBundle::from(Transform::from_xyz(300., -50., 0.)))
+        .insert(material2);
+
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0., 0., 0.),
+                custom_size: Some(Vec2::new(500.0, 50.0)),
+                ..default()
+            },
+            ..default()
+        })
+        .insert(RigidBody::Fixed)
+        .insert(Collider::cuboid(250., 25.))
+        .insert(TransformBundle::from(Transform::from_xyz(-300., -150., 0.)))
+        .insert(material3);
+
+
 
 }
 
@@ -81,7 +116,7 @@ fn spawn_player(
         })
         .insert(Past{
             transforms: Vec::new(),
-            timer: Timer::new(Duration::new(0, 1000000), TimerMode::Repeating),
+            timer: Timer::new(Duration::new(0, 100000), TimerMode::Repeating),
         })
         .insert(SpriteBundle {
             global_transform: Transform::from_xyz(0., 100., 0.).into(),
@@ -152,7 +187,6 @@ fn store_pos(
         
         if past.timer.finished() && !player.is_rewinding{
             past.transforms.push(*transform);
-            println!("{:?}",transform.translation.x);
         }
     }
 }
@@ -167,7 +201,6 @@ fn rewind(
         if input.pressed(KeyCode::S) && past.transforms.len() > 0{
             object.is_rewinding = true;
             if past.timer.finished(){
-                println!("rewinding {:?}", object.is_rewinding);
                 let this_transform = past.transforms.pop().unwrap();
                 transform.translation = this_transform.translation;
                 transform.rotation = this_transform.rotation;
