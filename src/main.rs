@@ -7,8 +7,8 @@ fn main(){
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_systems(Startup, (setup_camera, setup_scene, spawn_player))
-        .add_systems(Update, (character_horizontal_movement, character_jump, store_pos))
+        .add_systems(Startup, (setup_camera, setup_scene, spawn_player, spawn_boxes))
+        .add_systems(Update, (character_horizontal_movement, character_jump, store_pos, ground_character))
         .add_systems(Update, rewind.before(store_pos))
         .run()
 }
@@ -16,12 +16,13 @@ fn main(){
 #[derive(Component)]
 pub struct Player {
     pub speed: f32,
-    pub is_rewinding: bool,
 }
 
 #[derive(Component)]
 struct Past{
+    pub is_rewinding: bool,
     pub transforms: Vec<Transform>,
+    pub velocities: Vec<Velocity>,
     pub timer: Timer,
 }
 
@@ -112,10 +113,11 @@ fn spawn_player(
         .insert(GravityScale(10.))
         .insert(Player{
             speed: 300.,
-            is_rewinding: false
         })
         .insert(Past{
+            is_rewinding: false,
             transforms: Vec::new(),
+            velocities: Vec::new(),
             timer: Timer::new(Duration::new(0, 100000), TimerMode::Repeating),
         })
         .insert(SpriteBundle {
@@ -125,89 +127,100 @@ fn spawn_player(
         });
 }
 
+fn spawn_boxes(
+    mut commands: Commands, 
+    asset_server: Res<AssetServer>,
+) {
+    let texture2:Handle<Image> = asset_server.load("rewind_box.png");
+    commands
+        .spawn(RigidBody::Dynamic)
+        .insert(Collider::cuboid(32., 32.))
+        .insert(Velocity{linvel: Vec2::new(0., 0.), angvel:0.})
+        .insert(GravityScale(10.))
+        .insert(Past{
+            is_rewinding: false,
+            transforms: Vec::new(),
+            velocities: Vec::new(),
+            timer: Timer::new(Duration::new(0, 100000), TimerMode::Repeating),
+        })
+        .insert(SpriteBundle {
+            global_transform: Transform::from_xyz(-400., 100., 0.).into(),
+            texture: texture2,
+            ..Default::default()
+        });
+}
+
+fn ground_character(
+    mut controllers: Query<&mut KinematicCharacterController>
+){
+    for mut controller in controllers.iter_mut(){
+        controller.translation = Some(Vec2 { x: 0., y: -1. })
+    }
+}
+
 fn character_horizontal_movement(
-    mut characters: Query<(&mut KinematicCharacterController, &Player)>,
+    mut characters: Query<(&Player, &Past, &mut Velocity)>,
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
 ) {
-    for(mut controller, player) in characters.iter_mut(){
-        if input.pressed(KeyCode::D) && !player.is_rewinding{
+    for(player, past, mut velocity) in characters.iter_mut(){
+        if input.pressed(KeyCode::D) && !past.is_rewinding{
             let right_speed = player.speed*time.delta_seconds();
-            controller.translation = match controller.translation{
-                Some(mut v) => {
-                    v.x = right_speed;
-                    Some(v)
-                }
-                None =>{
-                    Some(Vec2::new(right_speed, -1.0))
-                }
-            }
-        } else if input.pressed(KeyCode::A) && !player.is_rewinding{
+            velocity.linvel.x = right_speed * 30.;
+        } else if input.pressed(KeyCode::A) && !past.is_rewinding{
             let left_speed = -player.speed*time.delta_seconds();
-            controller.translation = match controller.translation{
-                Some(mut v) => {
-                    v.x = left_speed;
-                    Some(v)
-                }
-                None =>{
-                    Some(Vec2::new(left_speed, -1.0))
-                }
-            }
-        } else {
-            controller.translation = match controller.translation {
-                Some(mut v) => {
-                    v.x = 0.;
-                    Some(v)
-                }
-                None => Some(Vec2::new(0., -1.)),
-            };
+            velocity.linvel.x = left_speed*30.;
         }
     }
 }
 
 
 fn character_jump(
-    mut characters: Query<(&Player, &mut KinematicCharacterControllerOutput, &mut Velocity)>,
+    mut characters: Query<(&Player, &mut KinematicCharacterControllerOutput, &mut Velocity, &Past)>,
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
 ) {
-    for(player, output, mut velocity) in characters.iter_mut(){
+    for(player, output, mut velocity, past) in characters.iter_mut(){
         let movement_amount = player.speed * time.delta_seconds();
-        if output.grounded && input.pressed(KeyCode::W) && !player.is_rewinding {
+        if output.grounded && input.pressed(KeyCode::W) && !past.is_rewinding {
             velocity.linvel = Vec2::new(0.,movement_amount * 120.);
         }
     }
 }
 
 fn store_pos(
-    mut objects_with_past: Query<(&mut Past, &Transform, &Player)>,
-    
+    mut objects_with_past: Query<(&mut Past, &Transform, &Velocity)>,
 ) {
-    for (mut past, transform, player) in objects_with_past.iter_mut(){
-        
-        if past.timer.finished() && !player.is_rewinding{
+    for (mut past, transform, velocity) in objects_with_past.iter_mut(){
+        if past.timer.finished() && !past.is_rewinding{
             past.transforms.push(*transform);
+            past.velocities.push(*velocity);
         }
     }
 }
 
 fn rewind(
-    mut objects: Query<(&mut Past, &mut Player, &mut Transform)>,
+    mut objects: Query<(&mut Past, &mut Transform, &mut GravityScale, &mut Velocity)>,
     time: Res<Time>,
     input: Res<Input<KeyCode>>,
 ){
-    for(mut past, mut object, mut transform) in objects.iter_mut(){
+    for(mut past, mut transform, mut gravity, mut velocity) in objects.iter_mut(){
         past.timer.tick(time.delta());
         if input.pressed(KeyCode::S) && past.transforms.len() > 0{
-            object.is_rewinding = true;
+            past.is_rewinding = true;
             if past.timer.finished(){
                 let this_transform = past.transforms.pop().unwrap();
+                let this_velocity = past.velocities.pop().unwrap();
                 transform.translation = this_transform.translation;
                 transform.rotation = this_transform.rotation;
+                velocity.linvel = this_velocity.linvel;
+                velocity.angvel = this_velocity.angvel;
+                gravity.0 = 0.;
             }
         }
         else {
-            object.is_rewinding = false;
+            past.is_rewinding = false;
+            gravity.0 = 10.;
         }
     }
 }
