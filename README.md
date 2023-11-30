@@ -1,0 +1,5 @@
+## rewind_platformer
+# Bevy Game
+I wanted a project to learn bevy and this was an idea I've wanted to try for a while. Utilizing Bevy's ECS and the Bevy Rapier physics plugin I made this quick game demo that lets you rewind time globally, just for the player, and for everything except the player. I used rapier_2d to make colliders and a player controller for all the entities. I created a component called "Past" which is queried in an update scheduled system to store position and rewind for all entities that contain it. 
+# WASM Compile
+I thought it would be a fun game demo to upload to my itch.io page (https://kingmeelo.itch.io/) and thought that it might be nice to be able to run it in the browser. I heard Bevy and rust were able to compile to web asembly so I decided to figure that out. I ultimatle wound up using Trunk to compile to WASM and generate the neccesary files. I then compressed into a zip and sent it over to itch.io. Spent some time trouble shooting and now it's up(or at least it should be).
